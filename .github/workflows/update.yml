@@ -1,0 +1,54 @@
+name: Update news
+on:
+  schedule:
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch feeds
+        run: |
+          python3 - <<'PY'
+          import urllib.request, urllib.parse, xml.etree.ElementTree as ET
+          import json, email.utils, datetime, time
+          Q = [
+            '"public health" (Austin OR "Travis County" OR "Williamson County" OR "Hays County" OR "Central Texas")',
+            'measles OR "West Nile" OR flu OR vaccine Austin Texas',
+            '"Texas Department of State Health Services"',
+          ]
+          items = {}
+          for q in Q:
+            url = "https://news.google.com/rss/search?q=" + urllib.parse.quote_plus(q) + "&hl=en-US&gl=US&ceid=US:en"
+            try:
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+              root = ET.fromstring(urllib.request.urlopen(req, timeout=30).read())
+            except Exception as e:
+              print("fail", e)
+              continue
+            for it in root.iter("item"):
+              t = it.findtext("title") or ""
+              l = it.findtext("link") or ""
+              s = it.findtext("source") or ""
+              try:
+                ts = email.utils.parsedate_to_datetime(it.findtext("pubDate") or "").timestamp()
+              except Exception:
+                ts = 0
+              if ts < time.time() - 30 * 86400:
+                continue
+              if s and t.endswith(" - " + s):
+                t = t[: -len(s) - 3]
+              items[l] = {"t": t, "u": l, "s": s, "ts": ts}
+          out = sorted(items.values(), key=lambda x: -x["ts"])[:40]
+          json.dump({"updated": datetime.datetime.utcnow().isoformat() + "Z", "items": out}, open("news.json", "w"))
+          PY
+      - name: Save
+        run: |
+          git config user.name "news-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add news.json
+          git commit -m "Update news" || exit 0
+          git push
