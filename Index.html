@@ -1,54 +1,38 @@
-name: Update news
-on:
-  schedule:
-    - cron: "0 11 * * *"
-  workflow_dispatch:
-permissions:
-  contents: write
-jobs:
-  update:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fetch feeds
-        run: |
-          python3 - <<'PY'
-          import urllib.request, urllib.parse, xml.etree.ElementTree as ET
-          import json, email.utils, datetime, time
-          Q = [
-            '"public health" (Austin OR "Travis County" OR "Williamson County" OR "Hays County" OR "Central Texas")',
-            'measles OR "West Nile" OR flu OR vaccine Austin Texas',
-            '"Texas Department of State Health Services"',
-          ]
-          items = {}
-          for q in Q:
-            url = "https://news.google.com/rss/search?q=" + urllib.parse.quote_plus(q) + "&hl=en-US&gl=US&ceid=US:en"
-            try:
-              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-              root = ET.fromstring(urllib.request.urlopen(req, timeout=30).read())
-            except Exception as e:
-              print("fail", e)
-              continue
-            for it in root.iter("item"):
-              t = it.findtext("title") or ""
-              l = it.findtext("link") or ""
-              s = it.findtext("source") or ""
-              try:
-                ts = email.utils.parsedate_to_datetime(it.findtext("pubDate") or "").timestamp()
-              except Exception:
-                ts = 0
-              if ts < time.time() - 30 * 86400:
-                continue
-              if s and t.endswith(" - " + s):
-                t = t[: -len(s) - 3]
-              items[l] = {"t": t, "u": l, "s": s, "ts": ts}
-          out = sorted(items.values(), key=lambda x: -x["ts"])[:40]
-          json.dump({"updated": datetime.datetime.utcnow().isoformat() + "Z", "items": out}, open("news.json", "w"))
-          PY
-      - name: Save
-        run: |
-          git config user.name "news-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add news.json
-          git commit -m "Update news" || exit 0
-          git push
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>CTX Health</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="CTX Health">
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1c1b19;--mute:#6b6963;--line:#e4e1d9;--acc:#0f766e}
+@media(prefers-color-scheme:dark){:root{--bg:#141413;--card:#1f1e1c;--ink:#f0eee8;--mute:#a09d94;--line:#34322e;--acc:#5eead4}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header,main{max-width:640px;margin:0 auto;padding:0 16px}
+header{padding-top:18px}
+h1{margin:0;font-size:26px}
+.sub{color:var(--mute);font-size:13px;margin:2px 0 14px}
+a{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px;color:inherit;text-decoration:none}
+a:visited h2{color:var(--mute)}
+h2{margin:0 0 4px;font-size:17px;line-height:1.3}
+.m{font-size:12px;color:var(--acc);font-weight:600}
+</style></head><body>
+<header><h1>CTX Health</h1><div class="sub" id="sub">Loading…</div></header>
+<main id="list"></main>
+<script>
+function ago(ts){var h=(Date.now()/1000-ts)/3600;
+if(h<1)return"just now";if(h<24)return Math.floor(h)+"h ago";
+var d=Math.floor(h/24);return d+(d==1?" day ago":" days ago")}
+fetch("news.json?"+Date.now()).then(function(r){return r.json()}).then(function(j){
+var u=new Date(j.updated);
+document.getElementById("sub").textContent="Central Texas public health · updated "+u.toLocaleDateString(undefined,{month:"short",day:"numeric"})+" "+u.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+var l=document.getElementById("list");
+j.items.forEach(function(n){
+var a=document.createElement("a");a.href=n.u;a.target="_blank";a.rel="noopener";
+var m=document.createElement("div");m.className="m";m.textContent=(n.s||"News")+" · "+ago(n.ts);
+var h=document.createElement("h2");h.textContent=n.t;
+a.append(m,h);l.appendChild(a)});
+if(!j.items.length)l.textContent="No stories found yet."
+}).catch(function(){document.getElementById("sub").textContent="No news file yet. Run the update once (see setup)."});
+</script></body></html>
